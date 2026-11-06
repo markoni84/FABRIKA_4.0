@@ -1,0 +1,77 @@
+services:
+  # 1. Mosquitto MQTT Broker
+  mosquitto:
+    image: eclipse-mosquitto:latest
+    container_name: mosquitto_broker
+    restart: always
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./mosquitto/config:/mosquitto/config
+
+  # 2. InfluxDB Baza podataka (NOVO!)
+  influxdb:
+    image: influxdb:2.7
+    container_name: influxdb
+    restart: always
+    ports:
+      - "8086:8086"
+    environment:
+      - DOCKER_INFLUXDB_INIT_MODE=${DOCKER_INFLUXDB_INIT_MODE}
+      - DOCKER_INFLUXDB_INIT_USERNAME=${DOCKER_INFLUXDB_INIT_USERNAME}
+      - DOCKER_INFLUXDB_INIT_PASSWORD=${DOCKER_INFLUXDB_INIT_PASSWORD}
+      - DOCKER_INFLUXDB_INIT_ORG=${DOCKER_INFLUXDB_INIT_ORG}
+      - DOCKER_INFLUXDB_INIT_BUCKET=${DOCKER_INFLUXDB_INIT_BUCKET}
+      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=${DOCKER_INFLUXDB_INIT_ADMIN_TOKEN}
+      - TZ=Europe/Belgrade
+    volumes:
+      - influxdb_data:/var/lib/influxdb2
+
+  grafana:
+    image: grafana/grafana-oss:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+
+  # 3. ESP Publisher (Čita ESP32 preko serijskog porta i šalje na MQTT)
+  esp_publisher:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: esp_publisher
+    restart: always
+    stop_grace_period: 1s
+    command: python FotoSenzorOOP.py
+    devices:
+      - "/dev/ttyUSB0:/dev/ttyUSB0"  # Proveri da li je ESP32 na ttyUSB0 ili ttyACM0
+    volumes:
+      - .:/app
+    depends_on:
+      - mosquitto
+
+  # 4. MQTT Ingestor / Subscriber (Sluša MQTT i sprema podatke)
+  mqtt_ingestor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mqtt_ingestor
+    restart: always
+    stop_grace_period: 1s
+    command: python -u mqtt_to_influx.py
+    volumes:
+      - .:/app
+    environment:
+      - INFLUX_URL=${INFLUX_URL}
+      - INFLUX_TOKEN=${INFLUX_TOKEN}
+      - INFLUX_ORG=${INFLUX_ORG}
+      - INFLUX_BUCKET=${INFLUX_BUCKET}
+    depends_on:
+      - mosquitto
+      - influxdb
+
+volumes:
+  influxdb_data:
