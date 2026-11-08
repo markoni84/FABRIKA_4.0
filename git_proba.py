@@ -3,3 +3,6 @@ def funkcija_1(self):
 
 def funkcija_2(self):
     print("pozdrav iz funkcije 2")
+
+def funkcija_3(self):
+    print("pozdrav iz funkcije 3")
